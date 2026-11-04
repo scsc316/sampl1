@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>미로 탈출</title>
+<style>
+  :root {
+    --bg: #0e1a12; --panel: #172a1c; --line: #2b4a33; --text: #eef6ea; --muted: #93ab95;
+    --accent: #4cbf55; --path: #1a2e1f;
+    --easy: #6fe07a; --normal: #ffd23f; --hard: #ff6b81;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    display: flex; flex-direction: column; height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select: none; -webkit-user-select: none;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 16px; flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 1.3rem; letter-spacing: 0.04em; }
+  .diffs { display: flex; gap: 6px; }
+  .diffs button { min-width: 64px; }
+  .diffs button.active[data-diff="easy"]   { border-color: var(--easy);   color: var(--easy); }
+  .diffs button.active[data-diff="normal"] { border-color: var(--normal); color: var(--normal); }
+  .diffs button.active[data-diff="hard"]   { border-color: var(--hard);   color: var(--hard); }
+  .stats { display: flex; gap: 14px; font-variant-numeric: tabular-nums; }
+  .stats span { color: var(--muted); font-size: 0.8rem; margin-right: 4px; }
+  .stats b { font-size: 1.05rem; }
+  button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 12px; font: inherit; font-size: 0.9rem; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px 16px; }
+  canvas { display: block; background: var(--path); border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); touch-action: none; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 0 16px 12px; }
+
+  .overlay {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(8,14,10,0.78); backdrop-filter: blur(3px); z-index: 10; padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 28px 24px; width: min(360px, 100%); text-align: center;
+    animation: pop 0.3s ease-out;
+  }
+  @keyframes pop { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .card h2 { margin: 0 0 6px; font-size: 1.6rem; color: #ff9ccf; }
+  .card.fail h2 { color: #c58bff; }
+  #loveScene { display: block; margin: -6px auto 6px; width: 240px; height: 110px; max-width: 100%; }
+  .card.fail #loveScene { display: none; }
+  .items { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .items .item { padding: 5px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 0.9rem; }
+  .items button.item:not(:disabled) { border-color: #7fd3ff; box-shadow: 0 0 8px rgba(127,211,255,0.4); }
+  .items button.item:disabled { opacity: 0.5; cursor: default; }
+  .items .next { color: var(--muted); font-size: 0.8rem; }
+  .toast {
+    position: fixed; left: 50%; top: 70px; transform: translate(-50%, -10px); opacity: 0;
+    background: rgba(23,42,28,0.95); border: 1px solid var(--accent); border-radius: 12px;
+    padding: 10px 16px; font-size: 0.95rem; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+    z-index: 20; max-width: calc(100% - 32px); text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #enemyStat.chase { color: #ff6b81; animation: blink 0.8s infinite; }
+  @keyframes blink { 50% { opacity: 0.45; } }
+  .card p { margin: 6px 0; color: var(--muted); }
+  .card .big { font-size: 2.4rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin: 12px 0 4px; }
+  .card .record { color: var(--normal); font-weight: 600; min-height: 1.4em; }
+  .card .row { display: flex; gap: 8px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .card .row button { padding: 10px 16px; font-size: 1rem; }
+  .card .primary { background: var(--accent); border-color: var(--accent); color: #0b1a0e; font-weight: 600; }
+
+  @media (max-width: 600px), (pointer: coarse) {
+    header { padding: 8px 10px; gap: 6px; }
+    h1 { display: none; }
+    .diffs button { min-width: 0; padding: 6px 10px; }
+    .stats { gap: 10px; }
+    .stats > div { white-space: nowrap; }
+    .stats span { margin-right: 2px; }
+    .stats b { font-size: 0.95rem; }
+    .items .item { padding: 4px 8px; }
+    main { padding: 0 6px 6px; }
+    canvas { border-radius: 4px; }
+    footer { display: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🌿 미로 탈출</h1>
+    <div class="diffs">
+      <button data-diff="easy">쉬움</button>
+      <button data-diff="normal">보통</button>
+      <button data-diff="hard">어려움</button>
+    </div>
+    <div class="stats">
+      <div><span>시간</span><b id="time">0.0s</b></div>
+      <div><span>이동</span><b id="moves">0</b></div>
+      <div><span>적</span><b id="enemyStat">대기</b></div>
+    </div>
+    <div class="items">
+      <span class="item" title="슬라임에 닿으면 자동으로 뛰어넘어요">🪶 <b id="featherCount">0</b></span>
+      <button class="item" id="iceBtn" title="Space: 발밑에 얼음 설치 (슬라임이 밟으면 2턴 정지)" disabled>❄️ <b id="iceCount">0</b></button>
+      <span class="next" id="nextItem"></span>
+    </div>
+  </header>
+  <main id="stage"><canvas id="c"></canvas></main>
+  <footer>방향키 / WASD 로 이동 · R: 새 미로 · Space: ❄️ 얼음 설치 · 길가의 🪶❄️ 아이템을 주우세요 · 슬라임을 피해 공주에게 가세요!</footer>
+
+  <div class="toast" id="toast"></div>
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <canvas id="loveScene"></canvas>
+      <h2 id="title">👑 공주를 구했어요!</h2>
+      <p id="msg"></p>
+      <div class="big" id="finalTime">0.0초</div>
+      <p id="finalMoves"></p>
+      <div class="record" id="record"></div>
+      <div class="row">
+        <button class="primary" id="primaryBtn">새 미로</button>
+        <button id="secondBtn">더 어렵게</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const $ = id => document.getElementById(id);
+
+const DIFFS = {
+  // short: 짧은 변 칸 수 / head: 적이 출발하기 전 먼저 갈 수 있는 칸 수 (적은 내가 한 칸 갈 때 한 칸 이동)
+  // enemies: 적 수 / gap: 추가 적이 정답 길로 합류했을 때 나와의 간격 범위 (길을 안 틀리면 절대 안 잡힘)
+  // items: 출구 쪽으로 진행하면서 받는 아이템 수 (정답 길이를 items+1 등분한 지점마다 1개)
+  easy:   { label: '쉬움',   short: 8,  head: 12, enemies: 1, gap: [0, 0],  items: 2 },
+  normal: { label: '보통',   short: 14, head: 10, enemies: 2, gap: [7, 10], items: 3 },
+  hard:   { label: '어려움', short: 22, head: 8,  enemies: 3, gap: [5, 8],  items: 4 },
+};
+const ORDER = ['easy', 'normal', 'hard'];
+const DIRS = { up: [0, -1, 0], right: [1, 0, 1], down: [0, 1, 2], left: [-1, 0, 3] }; // walls: 위,오른,아래,왼
+
+// ===== 픽셀 스프라이트 (오리지널 디자인) =====
+const HERO_PAL = {
+  C: '#1fb5a8', c: '#11786f', H: '#3a2a1a', S: '#ffd2a6', E: '#1d1d1d', M: '#e0607a',
+  W: '#fff3d6', O: '#ff8a2b', Y: '#7a3b12', B: '#4a3a5a',
+};
+const HERO_TOP = [
+  '....CCCCC...',
+  '...CCCCCCCC.',
+  '...ccccccccc',
+  '...HSSSSESS.',
+  '..HHSSSSESS.',
+  '...SSSSSMS..',
+  '....WWWWW...',
+  '..WWOWWWOW..',
+  '..SWOOOOOWS.',
+  '..S.OYOYO.S.',
+  '....OOOOO...',
+];
+const HERO_F1 = ['...OOO.OOO..', '..BBB...BBB.', '..BBB...BBB.'];
+const HERO_F2 = ['....OO.OO...', '...BB...BB..', '..BBB....BBB'];
+
+const PRIN_PAL = {
+  K: '#ffd23f', J: '#ff4fa0', H: '#7a3b1e', S: '#ffd9b8', E: '#1d1d1d', M: '#e0507a',
+  D: '#ff8cc6', d: '#e0609f', L: '#fff4fa',
+};
+const PRINCESS = [
+  '....K.K.K...',
+  '....KKKKK...',
+  '....KJKJK...',
+  '...HHHHHHH..',
+  '..HHSSSSSHH.',
+  '..HSESSESSH.',
+  '..HSSSMSSSH.',
+  '..HHSSSSSHH.',
+  '...H.LLL.H..',
+  '....DDDDD...',
+  '...SDDdDDS..',
+  '...DDDdDDD..',
+  '..DDDDdDDDD.',
+  '..DDDDdDDDD.',
+  '.DDDDDdDDDDD',
+  '.LLLLLLLLLLL',
+];
+
+function makeSprite(rows, pal) {
+  const w = Math.max(...rows.map(r => r.length)), h = rows.length;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  rows.forEach((r, y) => [...r].forEach((ch, x) => {
+    if (pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); }
+  }));
+  return c;
+}
+const heroFrames = [makeSprite([...HERO_TOP, ...HERO_F1], HERO_PAL), makeSprite([...HERO_TOP, ...HERO_F2], HERO_PAL)];
+const princessSprite = makeSprite(PRINCESS, PRIN_PAL);
+
+// 추격자: 보라색 덩쿨 슬라임
+const SLIME_PAL = { P: '#8a3fd1', p: '#4e1d80', L: '#c79bf5', W: '#ffffff', E: '#1d1d1d', R: '#ff3355' };
+const SLIME = [
+  '.....pp.....',
+  '....pPPp....',
+  '...pPLPPp...',
+  '..pPLPPPPp..',
+  '.pPPPPPPPPp.',
+  '.pWWPPPPWWp.',
+  'pPWRPPPPRWPp',
+  'pPPPPPPPPPPp',
+  'pPPEEEEEEPPp',
+  'pPPEWPPWEPPp',
+  '.pPpPPPPpPp.',
+  '..pp.pp.pp..',
+];
+const slimeSprite = makeSprite(SLIME, SLIME_PAL);
+
+// ===== 게임 상태 =====
+let diff = loadDiff();
+let cols, rows, cell, grid, player, goal, moves, startTime, elapsed, running, won, trail;
+let over = false;   // 잡힘
+let enemies = [];   // [{ x, y, fx, fy, t, dist }]
+let spawns = [];    // 미로마다 정해지는 적 출현 위치
+// 아이템
+let pickups = [];   // 맵 위 아이템 [{ x, y, type, taken }]
+let inv = { feather: 0, ice: 0 };
+let winTime = 0;    // 공주를 만난 순간 (하트 연출용)
+let traps = [];     // 설치된 얼음 함정 [{ x, y, placed }]
+let anim = { fromX: 0, fromY: 0, t: 1, facing: 1, frame: 0, lastMove: 0 };
+let wallLayer = null;
+
+function loadDiff() { try { return localStorage.getItem('maze-diff') || 'easy'; } catch { return 'easy'; } }
+function saveDiff() { try { localStorage.setItem('maze-diff', diff); } catch {} }
+
+function generate(w, h) {
+  const g = Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => ({ x, y, walls: [1,1,1,1], seen: false })));
+  const stack = [g[0][0]];
+  g[0][0].seen = true;
+  while (stack.length) {
+    const c = stack[stack.length - 1];
+    const options = Object.values(DIRS)
+      .map(([dx, dy, wi]) => ({ n: g[c.y + dy]?.[c.x + dx], wi }))
+      .filter(o => o.n && !o.n.seen);
+    if (!options.length) { stack.pop(); continue; }
+    const { n, wi } = options[Math.floor(Math.random() * options.length)];
+    c.walls[wi] = 0;
+    n.walls[(wi + 2) % 4] = 0;
+    n.seen = true;
+    stack.push(n);
+  }
+  return g;
+}
+
+function newMaze() {
+  const { width, height } = availSize();
+  const short = DIFFS[diff].short;
+  const ratio = Math.max(width, height) / Math.min(width, height);
+  const long = Math.max(short, Math.min(Math.round(short * ratio), short * 3));
+  if (width >= height) { cols = long; rows = short; } else { cols = short; rows = long; }
+  grid = generate(cols, rows);
+  goal = { x: cols - 1, y: rows - 1 };
+  spawns = planSpawns();
+  planItems();
+  document.querySelectorAll('.diffs button').forEach(b => b.classList.toggle('active', b.dataset.diff === diff));
+  resetRun();
+  resize();
+}
+
+// 같은 미로로 처음부터
+function resetRun() {
+  player = { x: 0, y: 0 };
+  anim = { fromX: 0, fromY: 0, t: 1, facing: 1, frame: 0, lastMove: 0 };
+  moves = 0; elapsed = 0; running = false; won = false; over = false; enemies = [];
+  spawns.forEach(s => s.spawned = false);
+  inv = { feather: 0, ice: 0 };
+  traps = [];
+  pickups.forEach(p => p.taken = false);
+  winTime = 0;
+  $('toast').classList.remove('show');
+  trail = new Set(['0,0']);
+  $('overlay').classList.remove('show');
+  updateHud();
+}
+
+function availSize() {
+  const cs = getComputedStyle(stage);
+  return {
+    width: stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+    height: stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+  };
+}
+
+function resize() {
+  if (!grid) return;
+  const { width, height } = availSize();
+  cell = Math.max(6, Math.floor(Math.min(width / cols, height / rows)));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cell * cols + 'px';
+  canvas.style.height = cell * rows + 'px';
+  canvas.width = Math.round(cell * cols * dpr);
+  canvas.height = Math.round(cell * rows * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  wallLayer = buildWalls(dpr);
+}
+
+// ===== 덩쿨 벽 (미로마다 한 번만 그려서 캐시) =====
+function rand(seed) { // 좌표 기반 고정 난수
+  let s = Math.sin(seed * 12.9898) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function buildWalls(dpr) {
+  const W = cell * cols, H = cell * rows;
+  const off = document.createElement('canvas');
+  off.width = Math.round(W * dpr); off.height = Math.round(H * dpr);
+  const g = off.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // 벽 선분 모으기 (중복 없이: 위/왼쪽 벽 + 오른쪽/아래 가장자리)
+  const segs = [];
+  for (const row of grid) for (const c of row) {
+    const x = c.x * cell, y = c.y * cell;
+    if (c.walls[0]) segs.push([x, y, x + cell, y]);
+    if (c.walls[3]) segs.push([x, y, x, y + cell]);
+    if (c.x === cols - 1 && c.walls[1]) segs.push([x + cell, y, x + cell, y + cell]);
+    if (c.y === rows - 1 && c.walls[2]) segs.push([x, y + cell, x + cell, y + cell]);
+  }
+
+  const lw = Math.max(2, cell * 0.16);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+
+  // 줄기: 진한 테두리 → 밝은 줄기 → 하이라이트
+  const stroke = (color, width) => {
+    g.strokeStyle = color; g.lineWidth = width; g.beginPath();
+    for (const [x1, y1, x2, y2] of segs) { g.moveTo(x1, y1); g.lineTo(x2, y2); }
+    g.stroke();
+  };
+  stroke('#123d1a', lw * 1.5);
+  stroke('#2f8a3a', lw);
+  stroke('rgba(150,230,120,0.35)', lw * 0.3);
+
+  // 잎사귀 & 꽃
+  if (cell >= 10) {
+    segs.forEach(([x1, y1, x2, y2], i) => {
+      const horiz = y1 === y2;
+      const seed = x1 * 7.13 + y1 * 3.71 + (horiz ? 1 : 2);
+      const count = 2;
+      for (let k = 0; k < count; k++) {
+        const t = (k + 0.3 + rand(seed + k) * 0.4) / count;
+        const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+        const side = (k + Math.floor(rand(seed * 2) * 2)) % 2 ? 1 : -1;
+        const base = horiz ? (side > 0 ? Math.PI / 2 : -Math.PI / 2) : (side > 0 ? 0 : Math.PI);
+        const ang = base + (rand(seed + k * 5) - 0.5) * 0.9;
+        drawLeaf(g, px, py, ang, cell * (0.2 + rand(seed + k * 9) * 0.08));
+      }
+      const r = rand(seed * 3.3);
+      if (r < 0.07) drawFlower(g, (x1 + x2) / 2, (y1 + y2) / 2, cell * 0.11, r < 0.035 ? '#ff8cc6' : '#ffe14a');
+    });
+  }
+  return off;
+}
+
+function drawLeaf(g, x, y, ang, size) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(ang);
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.quadraticCurveTo(size * 0.5, -size * 0.55, size * 1.2, 0);
+  g.quadraticCurveTo(size * 0.5, size * 0.55, 0, 0);
+  g.fillStyle = '#4cbf55';
+  g.fill();
+  g.strokeStyle = '#1f6b2a';
+  g.lineWidth = Math.max(0.6, size * 0.1);
+  g.stroke();
+  g.beginPath();
+  g.moveTo(size * 0.1, 0); g.lineTo(size * 0.95, 0);
+  g.strokeStyle = 'rgba(200,255,170,0.6)';
+  g.lineWidth = Math.max(0.5, size * 0.07);
+  g.stroke();
+  g.restore();
+}
+
+function drawFlower(g, x, y, r, color) {
+  g.fillStyle = color;
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    g.beginPath();
+    g.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, r * 0.75, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = '#fff6c2';
+  g.beginPath(); g.arc(x, y, r * 0.6, 0, Math.PI * 2); g.fill();
+}
+
+// ===== 이동 =====
+function move(dir) {
+  if (won || over || !grid) return false;
+  const [dx, dy, wi] = DIRS[dir];
+  if (grid[player.y][player.x].walls[wi]) return false;
+  if (!running) { running = true; startTime = performance.now(); }
+  if (dx) anim.facing = dx;
+  anim.fromX = player.x; anim.fromY = player.y; anim.t = 0;
+  anim.frame ^= 1; anim.lastMove = performance.now();
+  player.x += dx; player.y += dy;
+  moves++;
+  trail.add(player.x + ',' + player.y);
+  checkPickup();                                                            // 아이템 줍기
+  if (resolveHits()) {}                                                     // 적에게 걸어 들어감
+  else if (player.x === goal.x && player.y === goal.y) win();
+  else stepEnemy();                                                         // 내가 한 칸 → 적도 한 칸
+  updateHud();
+  return true;
+}
+
+function win() {
+  won = true; running = false;
+  elapsed = (performance.now() - startTime) / 1000;
+  const key = 'maze-best-' + diff;
+  let best = null;
+  try { best = parseFloat(localStorage.getItem(key)) || null; } catch {}
+  const isBest = !best || elapsed < best;
+  if (isBest) { try { localStorage.setItem(key, elapsed); } catch {} }
+
+  winTime = performance.now();
+  anim.facing = 1;
+  const msgs = elapsed < 10 ? ['번개처럼 달려와 줬군요! ⚡', '이렇게 빨리 와 주다니!']
+             : elapsed < 30 ? ['멋진 모험이었어요! 👏', '덩쿨 미로를 뚫고 와 줬어요!']
+             : ['포기하지 않고 와 줬군요! 💪', '드디어 다시 만났어요!'];
+  showResult({
+    fail: false,
+    delay: 1400,
+    title: '💖 드디어 만났어요!',
+    msg: `[${DIFFS[diff].label}] ` + msgs[Math.floor(Math.random() * msgs.length)],
+    record: isBest ? '🏆 새 최고기록!' : `최고기록 ${best.toFixed(1)}초`,
+    primary: ['새 미로', newMaze],
+    second: diff === 'hard' ? null : ['더 어렵게', () => { diff = ORDER[ORDER.indexOf(diff) + 1]; saveDiff(); newMaze(); }],
+  });
+}
+
+function lose() {
+  over = true; running = false;
+  const msgs = ['막다른 길이었어요… 😵', '슬라임에게 붙잡혔어요!', '길을 잘못 들었어요…'];
+  showResult({
+    fail: true,
+    title: '💀 잡혔어요!',
+    msg: `[${DIFFS[diff].label}] ` + msgs[Math.floor(Math.random() * msgs.length)],
+    record: '',
+    primary: ['다시 도전', resetRun],
+    second: ['새 미로', newMaze],
+  });
+}
+
+let primaryAction = newMaze;
+function showResult({ fail, title, msg, record, primary, second, delay = 350 }) {
+  document.querySelector('.card').classList.toggle('fail', fail);
+  $('title').textContent = title;
+  $('msg').textContent = msg;
+  $('finalTime').textContent = elapsed.toFixed(1) + '초';
+  $('finalMoves').textContent = fail ? `버틴 이동 ${moves}번` : `이동 ${moves}번`;
+  $('record').textContent = record;
+  $('primaryBtn').textContent = primary[0];
+  $('primaryBtn').onclick = primaryAction = primary[1];
+  $('secondBtn').style.display = second ? '' : 'none';
+  if (second) { $('secondBtn').textContent = second[0]; $('secondBtn').onclick = second[1]; }
+  updateHud();
+  const shownFor = fail ? over : won;
+  const token = winTime;
+  setTimeout(() => {
+    // 그 사이 새 미로/다시 도전을 눌렀으면 띄우지 않음
+    if ((fail ? over : won) === shownFor && winTime === token && (won || over)) $('overlay').classList.add('show');
+  }, delay);
+}
+
+function updateHud() {
+  $('moves').textContent = moves;
+  $('time').textContent = elapsed.toFixed(1) + 's';
+  updateEnemyStat();
+  updateItems();
+}
+
+function updateEnemyStat() {
+  const el = $('enemyStat');
+  let text, chase = false;
+  const n = spawns.length;
+  const count = n > 1 ? `${enemies.length}/${n}마리 · ` : '';
+  if (over) text = '잡힘';
+  else if (won) text = enemies.length ? '따돌림' : '-';
+  else if (enemies.length) {
+    text = `${count}${Math.min(...enemies.map(en => en.dist))}칸 뒤`;
+    chase = true;
+  } else text = `${count}${DIFFS[diff].head - moves}수 후 출발`;
+  if (el.textContent !== text) el.textContent = text;
+  el.classList.toggle('chase', chase);
+}
+
+// ===== 추격자 =====
+// 주인공 위치에서 BFS → 적이 있는 칸에서 주인공 쪽으로 한 칸 다가가는 칸을 고름
+// 반환: [다음 x, 다음 y, 이동 전 거리]
+function nextStepToward(fromX, fromY, toX, toY) {
+  if (fromX === toX && fromY === toY) return [fromX, fromY, 0];
+  const dist = new Int32Array(cols * rows).fill(-1);
+  const q = [toX + toY * cols];
+  dist[q[0]] = 0;
+  for (let i = 0; i < q.length; i++) {
+    const idx = q[i], x = idx % cols, y = (idx - x) / cols;
+    if (x === fromX && y === fromY) break;
+    for (const [dx, dy, wi] of Object.values(DIRS)) {
+      if (grid[y][x].walls[wi]) continue;
+      const n = (x + dx) + (y + dy) * cols;
+      if (dist[n] < 0) { dist[n] = dist[idx] + 1; q.push(n); }
+    }
+  }
+  const here = dist[fromX + fromY * cols];
+  for (const [dx, dy, wi] of Object.values(DIRS)) {
+    if (grid[fromY][fromX].walls[wi]) continue;
+    const n = (fromX + dx) + (fromY + dy) * cols;
+    if (dist[n] >= 0 && dist[n] < here) return [fromX + dx, fromY + dy, here];
+  }
+  return [fromX, fromY, here];
+}
+
+// 적 출현 위치 정하기
+// 1번 적: 출발 지점. 추가 적: 정답 길에서 갈라진 곁가지 속.
+// 정답 길로만 가면 내가 합류 지점을 먼저 지나가서 적이 항상 '뒤'에 붙도록 고름 → 길만 안 틀리면 클리어 가능.
+function planSpawns() {
+  const cfg = DIFFS[diff];
+  const list = [{ x: 0, y: 0, at: cfg.head }];
+  if (cfg.enemies <= 1) return list;
+
+  // 정답 길 (출발 → 출구)
+  const pathIdx = new Int32Array(cols * rows).fill(-1);
+  let x = 0, y = 0, i = 0;
+  pathIdx[0] = 0;
+  while (!(x === goal.x && y === goal.y)) {
+    [x, y] = nextStepToward(x, y, goal.x, goal.y);
+    pathIdx[x + y * cols] = ++i;
+  }
+
+  // 정답 길의 모든 칸에서 동시에 BFS → 각 칸이 어느 지점(attach)에서 몇 칸(d) 떨어진 곁가지인지
+  const attach = new Int32Array(cols * rows).fill(-1);
+  const dist = new Int32Array(cols * rows).fill(-1);
+  const q = [];
+  for (let k = 0; k < cols * rows; k++) if (pathIdx[k] >= 0) { attach[k] = pathIdx[k]; dist[k] = 0; q.push(k); }
+  for (let h = 0; h < q.length; h++) {
+    const k = q[h], cx = k % cols, cy = (k - cx) / cols;
+    for (const [dx, dy, wi] of Object.values(DIRS)) {
+      if (grid[cy][cx].walls[wi]) continue;
+      const n = (cx + dx) + (cy + dy) * cols;
+      if (dist[n] < 0) { dist[n] = dist[k] + 1; attach[n] = attach[k]; q.push(n); }
+    }
+  }
+
+  // 간격 = (적 등장 시점 + 합류 지점까지 거리) - 내가 합류 지점을 지나는 시점
+  // → 등장 시점 at = 합류지점 - 거리 + 간격 으로 정하면 간격이 정확히 맞춰짐
+  const [lo, hi] = cfg.gap;
+  const cands = [];
+  for (let k = 0; k < cols * rows; k++) {
+    if (dist[k] < 3) continue;
+    const g = lo + Math.floor(Math.random() * (hi - lo + 1));
+    const at = attach[k] - dist[k] + g;
+    if (at < 2) continue;
+    // 내 앞쪽 곁가지에서 튀어나와 합류 지점을 두고 경주하는 경우를 우선
+    cands.push({ k, at, ahead: dist[k] > g, r: Math.random() });
+  }
+  cands.sort((a, b) => (b.ahead - a.ahead) || (a.r - b.r));
+
+  const usedAttach = [];
+  for (const c of cands) {
+    if (list.length >= cfg.enemies) break;
+    if (usedAttach.some(a => Math.abs(a - attach[c.k]) < 5)) continue;  // 서로 다른 곁가지에서
+    usedAttach.push(attach[c.k]);
+    list.push({ x: c.k % cols, y: Math.floor(c.k / cols), at: c.at });
+  }
+  return list;
+}
+
+// 주인공이 한 칸 움직일 때마다 호출
+function stepEnemy() {
+  // 1) 이미 나온 적은 한 칸씩 다가옴 (얼었거나 기절한 적은 제자리)
+  for (const en of enemies) {
+    const [nx, ny, d] = nextStepToward(en.x, en.y, player.x, player.y);
+    en.fx = en.x; en.fy = en.y;
+    if (en.stun > 0) { en.stun--; en.dist = d; continue; }
+    en.t = 0;
+    en.x = nx; en.y = ny;
+    en.dist = Math.max(0, d - 1);
+    checkTrap(en);
+  }
+  if (resolveHits()) return;
+
+  // 2) 등장할 차례가 된 적 출현 (바로 코앞이면 한 턴 미룸)
+  spawns.forEach((s, i) => {
+    if (s.spawned || moves < s.at) return;
+    const d = nextStepToward(s.x, s.y, player.x, player.y)[2];
+    if (i > 0 && d < 3) return;
+    s.spawned = true;
+    enemies.push({ x: s.x, y: s.y, fx: s.x, fy: s.y, t: 1, dist: d, stun: 0, born: performance.now() });
+  });
+  resolveHits();
+}
+
+// 슬라임과 겹쳤는지 판정: 깃털이 있으면 뛰어넘고, 없으면 실패. 실패하면 true
+function resolveHits() {
+  for (const en of enemies) {
+    if (en.stun > 0 || en.x !== player.x || en.y !== player.y) continue;
+    if (inv.feather > 0) {
+      inv.feather--;
+      en.stun = 3; en.stunType = 'daze';
+      anim.jump = performance.now();
+      toast('🪶 깡총! 슬라임을 뛰어넘었어요 (3턴 기절)');
+    } else {
+      lose();
+      return true;
+    }
+  }
+  return false;
+}
+
+// ===== 아이템 =====
+function distMap(tx, ty) {
+  const dist = new Int32Array(cols * rows).fill(-1);
+  const q = [tx + ty * cols];
+  dist[q[0]] = 0;
+  for (let i = 0; i < q.length; i++) {
+    const k = q[i], x = k % cols, y = (k - x) / cols;
+    for (const [dx, dy, wi] of Object.values(DIRS)) {
+      if (grid[y][x].walls[wi]) continue;
+      const n = (x + dx) + (y + dy) * cols;
+      if (dist[n] < 0) { dist[n] = dist[k] + 1; q.push(n); }
+    }
+  }
+  return dist;
+}
+
+// 맵 위에 아이템 배치: 정답 길을 등분한 지점마다 1개 (종류는 번갈아)
+// 대부분 정답 길 바로 옆 한 칸짜리 곁가지에 놓여서 '살짝 들렀다 가는' 선택이 됨
+function planItems() {
+  const goalDist = distMap(goal.x, goal.y);
+  const pathLen = goalDist[0];
+  // 정답 길 칸 목록 (출발 → 출구)
+  const path = [[0, 0]];
+  while (path.length <= pathLen) {
+    const [x, y] = path[path.length - 1];
+    path.push(nextStepToward(x, y, goal.x, goal.y));
+  }
+  const onPath = new Set(path.map(([x, y]) => x + ',' + y));
+  const used = new Set([...onPath].filter(k => k === '0,0' || k === goal.x + ',' + goal.y));
+  spawns.forEach(s => used.add(s.x + ',' + s.y));
+
+  const n = DIFFS[diff].items;
+  const first = Math.random() < 0.5 ? 'feather' : 'ice';
+  pickups = [];
+  for (let i = 0; i < n; i++) {
+    const mark = Math.round(pathLen * (i + 1) / (n + 1));
+    const type = (i % 2 === 0) === (first === 'feather') ? 'feather' : 'ice';
+    // 표시 지점 근처(±4칸) 정답 길 칸의 바로 옆 곁가지 칸 후보
+    const cands = [];
+    for (let j = Math.max(1, mark - 4); j <= Math.min(pathLen - 1, mark + 4); j++) {
+      const [px, py] = path[j];
+      for (const [dx, dy, wi] of Object.values(DIRS)) {
+        if (grid[py][px].walls[wi]) continue;
+        const k = (px + dx) + ',' + (py + dy);
+        if (!onPath.has(k) && !used.has(k)) cands.push([px + dx, py + dy]);
+      }
+    }
+    let spot = cands.length ? cands[Math.floor(Math.random() * cands.length)] : path[mark];
+    if (used.has(spot[0] + ',' + spot[1])) continue;
+    used.add(spot[0] + ',' + spot[1]);
+    pickups.push({ x: spot[0], y: spot[1], type, taken: false });
+  }
+}
+
+function checkPickup() {
+  for (const p of pickups) {
+    if (p.taken || p.x !== player.x || p.y !== player.y) continue;
+    p.taken = true;
+    inv[p.type]++;
+    toast(p.type === 'feather'
+      ? '🪶 점프 깃털 획득! 슬라임에 닿으면 자동으로 뛰어넘어요'
+      : '❄️ 얼음 결정 획득! Space 또는 ❄️ 버튼으로 발밑에 설치해요');
+  }
+}
+
+// 얼음 함정 설치: 지금 서 있는 칸에 놓음. 슬라임이 밟으면 2턴 멈추고 함정은 사라짐
+const ICE_TURNS = 2;
+function useIce() {
+  if (won || over || inv.ice <= 0) return;
+  if (traps.some(t => t.x === player.x && t.y === player.y)) { toast('이미 얼음이 설치된 칸이에요'); return; }
+  inv.ice--;
+  traps.push({ x: player.x, y: player.y, placed: performance.now() });
+  toast(`❄️ 얼음 함정 설치! 슬라임이 밟으면 ${ICE_TURNS}턴 멈춰요`);
+  updateHud();
+}
+
+// 슬라임이 함정 칸에 들어왔는지 확인
+function checkTrap(en) {
+  const i = traps.findIndex(t => t.x === en.x && t.y === en.y);
+  if (i < 0) return;
+  traps.splice(i, 1);
+  en.stun = ICE_TURNS; en.stunType = 'ice';
+  toast(`❄️ 슬라임이 얼음을 밟았어요! ${ICE_TURNS}턴 정지`);
+}
+
+function updateItems() {
+  $('featherCount').textContent = inv.feather;
+  $('iceCount').textContent = inv.ice;
+  $('iceBtn').disabled = inv.ice <= 0 || won || over;
+  const left = pickups.filter(p => !p.taken).length;
+  $('nextItem').textContent = left && !won && !over ? `🎁 맵에 ${left}개` : '';
+}
+
+let toastTimer;
+function toast(text) {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+function enemyPos(en) {
+  const e = 1 - Math.pow(1 - en.t, 2);
+  return [en.fx + (en.x - en.fx) * e, en.fy + (en.y - en.fy) * e];
+}
+function heroPos() {
+  const e = 1 - Math.pow(1 - anim.t, 2);
+  return [anim.fromX + (player.x - anim.fromX) * e, anim.fromY + (player.y - anim.fromY) * e];
+}
+
+// ===== 렌더링 루프 =====
+let lastTs = performance.now();
+function loop(ts) {
+  const dt = ts - lastTs; lastTs = ts;
+  if (running) { elapsed = Math.max(0, (ts - startTime) / 1000); $('time').textContent = elapsed.toFixed(1) + 's'; }
+  anim.t = Math.min(1, anim.t + dt / 90);
+  for (const en of enemies) en.t = Math.min(1, en.t + dt / 90);
+  if (grid && wallLayer) draw(ts);
+  if (won && $('overlay').classList.contains('show')) drawLoveScene(ts);
+  requestAnimationFrame(loop);
+}
+
+// 하트 (픽셀)
+const HEART = [
+  '.RR...RR.',
+  'RRRR.RRRR',
+  'RWWRRRRRR',
+  'RWRRRRRRR',
+  '.RRRRRRR.',
+  '..RRRRR..',
+  '...RRR...',
+  '....R....',
+];
+const heartSprite = makeSprite(HEART, { R: '#ff4f8b', W: '#ffd0e0' });
+
+function floatingHearts(g, cx, cy, spread, size, ts) {
+  g.textAlign = 'center';
+  g.font = `${size}px sans-serif`;
+  for (let i = 0; i < 7; i++) {
+    const p = ((ts / 1600) + i / 7) % 1;
+    const x = cx + Math.sin(i * 2.1 + ts / 500) * spread;
+    const y = cy - p * spread * 1.6;
+    g.globalAlpha = 1 - p;
+    g.fillText(i % 3 ? '💕' : '💖', x, y);
+  }
+  g.globalAlpha = 1;
+}
+
+// 결과 카드 속 장면: 주인공 ♥ 공주
+function drawLoveScene(ts) {
+  const c = $('loveScene');
+  const dpr = window.devicePixelRatio || 1;
+  const W = 240, H = 110;
+  if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.imageSmoothingEnabled = false;
+
+  // 바닥 그림자
+  g.fillStyle = 'rgba(0,0,0,0.3)';
+  g.beginPath(); g.ellipse(70, 100, 24, 5, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(170, 100, 24, 5, 0, 0, Math.PI * 2); g.fill();
+
+  const hop = Math.abs(Math.sin(ts / 300)) * 6;
+  const hero = heroFrames[0];
+  g.drawImage(hero, 70 - 30, 100 - 70 - hop, 60, 70);
+  g.save();
+  g.translate(170, 0); g.scale(-1, 1);
+  g.drawImage(princessSprite, -30, 100 - 80 - Math.abs(Math.sin(ts / 300 + 1)) * 4, 60, 80);
+  g.restore();
+
+  const beat = 1 + Math.max(0, Math.sin(ts / 180)) * 0.18;
+  const hw = 9 * 4 * beat, hh = 8 * 4 * beat;
+  g.drawImage(heartSprite, 120 - hw / 2, 48 - hh / 2, hw, hh);
+  g.imageSmoothingEnabled = true;
+  floatingHearts(g, 120, 40, 22, 12, ts);
+}
+
+function draw(ts) {
+  const W = cols * cell, H = rows * cell;
+  ctx.clearRect(0, 0, W, H);
+
+  // 지나온 길
+  ctx.fillStyle = 'rgba(255,230,150,0.10)';
+  for (const t of trail) {
+    const [x, y] = t.split(',').map(Number);
+    ctx.fillRect(x * cell, y * cell, cell, cell);
+  }
+
+  // 출구 빛
+  const gx = goal.x * cell + cell / 2, gy = goal.y * cell + cell / 2;
+  const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, cell * 0.8);
+  glow.addColorStop(0, 'rgba(255,140,198,0.55)');
+  glow.addColorStop(1, 'rgba(255,140,198,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(gx - cell, gy - cell, cell * 2, cell * 2);
+
+  // 덩쿨 벽
+  ctx.drawImage(wallLayer, 0, 0, W, H);
+
+  // 맵 위 아이템 (둥실 + 반짝)
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const p of pickups) {
+    if (p.taken) continue;
+    const ix = p.x * cell + cell / 2, iy = p.y * cell + cell / 2 + Math.sin(ts / 300 + p.x) * cell * 0.06;
+    const halo = ctx.createRadialGradient(ix, iy, 0, ix, iy, cell * 0.55);
+    halo.addColorStop(0, p.type === 'ice' ? 'rgba(127,211,255,0.6)' : 'rgba(255,240,170,0.6)');
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(ix - cell, iy - cell, cell * 2, cell * 2);
+    ctx.font = `${Math.max(10, cell * 0.55)}px sans-serif`;
+    ctx.fillText(p.type === 'ice' ? '❄️' : '🪶', ix, iy);
+  }
+  // 설치된 얼음 함정 (바닥에 깔린 얼음판)
+  for (const t of traps) {
+    const tx = t.x * cell, ty = t.y * cell, pad = cell * 0.12;
+    const appear = Math.min(1, (performance.now() - t.placed) / 200);
+    ctx.globalAlpha = appear;
+    ctx.fillStyle = 'rgba(160,225,255,0.5)';
+    ctx.fillRect(tx + pad, ty + pad, cell - pad * 2, cell - pad * 2);
+    ctx.strokeStyle = 'rgba(200,240,255,0.8)';
+    ctx.lineWidth = Math.max(1, cell * 0.04);
+    ctx.strokeRect(tx + pad, ty + pad, cell - pad * 2, cell - pad * 2);
+    // 반짝임
+    const shine = (ts / 900 + t.x * 0.3) % 1;
+    ctx.fillStyle = `rgba(255,255,255,${0.6 * (1 - shine)})`;
+    ctx.fillRect(tx + pad + (cell - pad * 2) * shine * 0.8, ty + pad, Math.max(1, cell * 0.06), cell - pad * 2);
+    ctx.font = `${Math.max(9, cell * 0.4)}px sans-serif`;
+    ctx.fillStyle = '#fff';
+    ctx.fillText('❄️', tx + cell / 2, ty + cell / 2);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.imageSmoothingEnabled = false;
+
+  // 만남 연출: 둘이 살짝 비켜서서 마주 보기
+  const meetP = winTime ? Math.min(1, (performance.now() - winTime) / 300) : 0;
+  const meet = meetP * cell * 0.24;
+
+  // 공주 (둥실둥실)
+  const ps = (cell * 0.82) / princessSprite.height;
+  const pw = princessSprite.width * ps, ph = princessSprite.height * ps;
+  const float = Math.sin(ts / 350) * cell * 0.04;
+  ctx.save();
+  ctx.translate(gx + meet, gy + float);
+  if (winTime) ctx.scale(-1, 1);
+  ctx.drawImage(princessSprite, -pw / 2, -ph / 2, pw, ph);
+  ctx.restore();
+  // 반짝이
+  const sp = (ts / 600) % 1;
+  ctx.fillStyle = `rgba(255,240,180,${1 - sp})`;
+  const sx = gx + Math.cos(ts / 400) * cell * 0.4, sy = gy - cell * 0.3 - sp * cell * 0.25;
+  ctx.fillRect(sx - 1, sy - 1, Math.max(2, cell * 0.06), Math.max(2, cell * 0.06));
+
+  // 추격자 (말랑말랑)
+  for (const en of enemies) {
+    const [ex, ey] = enemyPos(en);
+    const cx = ex * cell + cell / 2, cy = ey * cell + cell / 2;
+    const stunned = en.stun > 0;
+    if (!stunned) {
+      const red = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 0.9);
+      red.addColorStop(0, 'rgba(255,51,85,0.35)');
+      red.addColorStop(1, 'rgba(255,51,85,0)');
+      ctx.fillStyle = red;
+      ctx.fillRect(cx - cell, cy - cell, cell * 2, cell * 2);
+    }
+    // 막 튀어나온 적은 '뿅' 하고 커지며 등장
+    const pop = Math.min(1, (performance.now() - (en.born || 0)) / 250);
+    const sq = (stunned ? 0 : Math.sin(ts / 120) * 0.08) + (1 - pop) * 0.5;
+    const es = (cell * 0.78) / slimeSprite.height;
+    const ew = slimeSprite.width * es * (1 + sq), eh = slimeSprite.height * es * (1 - sq);
+    ctx.globalAlpha = stunned ? 0.6 : 1;
+    ctx.drawImage(slimeSprite, cx - ew / 2, cy + cell * 0.39 - eh, ew, eh);
+    ctx.globalAlpha = 1;
+    if (stunned) {
+      if (en.stunType === 'ice') {
+        ctx.fillStyle = 'rgba(150,220,255,0.45)';
+        ctx.fillRect(cx - ew / 2, cy + cell * 0.39 - eh, ew, eh);
+      }
+      ctx.font = `${Math.max(9, cell * 0.32)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(en.stunType === 'ice' ? '❄️' : '💫', cx, cy - cell * 0.32);
+    }
+  }
+
+  // 주인공 (부드러운 이동 + 깡총)
+  const [hpx, hpy] = heroPos();
+  const hx = hpx * cell + cell / 2;
+  const hy = hpy * cell + cell / 2;
+  let hop = anim.t < 1 ? Math.sin(anim.t * Math.PI) * cell * 0.12 : 0;
+  const jp = (performance.now() - (anim.jump || -1e9)) / 450;   // 깃털 점프
+  if (jp >= 0 && jp < 1) hop += Math.sin(jp * Math.PI) * cell * 0.55;
+  const idle = ts - anim.lastMove > 250;
+  const sprite = heroFrames[idle ? 0 : anim.frame];
+  const hs = (cell * 0.8) / sprite.height;
+  const w = sprite.width * hs, h = sprite.height * hs;
+
+  // 그림자
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(hx, hy + h / 2 - cell * 0.02, w * 0.35, cell * 0.07, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(hx - meet, hy - hop);
+  ctx.scale(anim.facing, 1);
+  ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+  ctx.restore();
+
+  // 만남: 둘 사이에 두근두근 하트 + 피어오르는 하트들
+  if (winTime && meetP >= 1) {
+    const t = performance.now() - winTime;
+    const grow = Math.min(1, (t - 300) / 250);
+    const beat = 1 + Math.max(0, Math.sin(ts / 180)) * 0.2;
+    const hs2 = Math.max(cell * 0.5, 18) * grow * beat;
+    ctx.drawImage(heartSprite, gx - hs2 / 2, gy - cell * 0.55 - hs2 * 0.45, hs2, hs2 * 8 / 9);
+    ctx.imageSmoothingEnabled = true;
+    floatingHearts(ctx, gx, gy - cell * 0.4, Math.max(cell * 0.6, 20), Math.max(10, cell * 0.3), ts);
+  }
+
+  ctx.imageSmoothingEnabled = true;
+}
+
+// ===== 키보드 =====
+const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
+window.addEventListener('keydown', e => {
+  const k = KEYS[e.key] || KEYS[e.key.toLowerCase?.()];
+  if (k) { e.preventDefault(); move(k); }
+  else if (e.key === 'Enter' && (won || over)) primaryAction();
+  else if (e.key === ' ' || e.key === 'e' || e.key === 'E') { e.preventDefault(); useIce(); }
+  else if (e.key === 'r' || e.key === 'R') newMaze();
+});
+
+// ===== 터치: 손가락을 끄는 만큼 칸 단위로 이동 =====
+let touch = null;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  touch = { x: t.clientX, y: t.clientY, startX: t.clientX, startY: t.clientY, moved: false };
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!touch) return;
+  const t = e.touches[0];
+  const step = Math.max(14, Math.min(cell * 0.8, 40));
+  let dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+  while (Math.max(Math.abs(dx), Math.abs(dy)) >= step) {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      move(dx > 0 ? 'right' : 'left');
+      touch.x += Math.sign(dx) * step; dx = t.clientX - touch.x;
+    } else {
+      move(dy > 0 ? 'down' : 'up');
+      touch.y += Math.sign(dy) * step; dy = t.clientY - touch.y;
+    }
+    touch.moved = true;
+  }
+}, { passive: false });
+
+// 탭: 주인공 기준으로 누른 방향으로 한 칸 이동
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!touch) return;
+  const t = e.changedTouches[0];
+  if (!touch.moved && Math.hypot(t.clientX - touch.startX, t.clientY - touch.startY) < 10) {
+    const r = canvas.getBoundingClientRect();
+    const dx = t.clientX - r.left - (player.x + 0.5) * cell;
+    const dy = t.clientY - r.top - (player.y + 0.5) * cell;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) > cell * 0.4) {
+      move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    }
+  }
+  touch = null;
+}, { passive: false });
+
+// ===== 버튼 =====
+document.querySelectorAll('.diffs button').forEach(b => b.addEventListener('click', () => {
+  diff = b.dataset.diff; saveDiff(); newMaze(); b.blur();
+}));
+
+$('iceBtn').addEventListener('click', e => { useIce(); e.currentTarget.blur(); });
+
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 100); });
+
+newMaze();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
