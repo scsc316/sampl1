@@ -13,7 +13,23 @@
     --easy: #6fe07a; --normal: #ffd23f; --hard: #ff6b81;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; overflow: hidden; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  button { touch-action: manipulation; }
+  /* 휴대폰용 엄지 버튼 (얼음 설치) */
+  .fab { display: none; }
+  @media (pointer: coarse) {
+    .fab:not([hidden]) {
+      display: flex; align-items: center; justify-content: center; position: fixed; z-index: 5;
+      right: calc(16px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom));
+      width: 64px; height: 64px; border-radius: 50%; font-size: 1.7rem; padding: 0;
+      background: rgba(30,70,95,0.92); border: 2px solid #7fd3ff; box-shadow: 0 4px 18px rgba(127,211,255,0.45);
+    }
+    .fab b {
+      position: absolute; top: -4px; right: -4px; min-width: 22px; height: 22px; border-radius: 11px;
+      background: #ff4f8b; color: #fff; font-size: 0.8rem; line-height: 22px; text-align: center; padding: 0 5px;
+    }
+    .fab:active { transform: scale(0.92); }
+  }
   body {
     background: var(--bg); color: var(--text);
     font-family: system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
@@ -116,6 +132,7 @@
   <main id="stage"><canvas id="c"></canvas></main>
   <footer>방향키 / WASD 로 이동 · R: 새 미로 · Space: ❄️ 얼음 설치 · 길가의 🪶❄️ 아이템을 주우세요 · 슬라임을 피해 공주에게 가세요!</footer>
 
+  <button class="fab" id="iceFab" hidden aria-label="얼음 설치">❄️<b id="iceFabCount">0</b></button>
   <div class="toast" id="toast"></div>
   <div class="overlay" id="overlay">
     <div class="card">
@@ -285,6 +302,7 @@ function resetRun() {
   traps = [];
   pickups.forEach(p => p.taken = false);
   winTime = 0;
+  camX = camY = 0;
   $('toast').classList.remove('show');
   trail = new Set(['0,0']);
   $('overlay').classList.remove('show');
@@ -299,18 +317,41 @@ function availSize() {
   };
 }
 
+// 휴대폰(터치)에서는 칸이 너무 작아지지 않게 최소 크기를 두고, 화면보다 큰 미로는 카메라가 주인공을 따라감
+const isTouch = () => window.forceTouch || matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+const MIN_TOUCH_CELL = 26;
+let viewW = 0, viewH = 0, camX = 0, camY = 0, scrolling = false;
+
 function resize() {
   if (!grid) return;
   const { width, height } = availSize();
-  cell = Math.max(6, Math.floor(Math.min(width / cols, height / rows)));
-  const dpr = window.devicePixelRatio || 1;
-  canvas.style.width = cell * cols + 'px';
-  canvas.style.height = cell * rows + 'px';
-  canvas.width = Math.round(cell * cols * dpr);
-  canvas.height = Math.round(cell * rows * dpr);
+  const fit = Math.floor(Math.min(width / cols, height / rows));
+  cell = Math.max(isTouch() ? MIN_TOUCH_CELL : 6, fit, 6);
+  viewW = Math.min(cell * cols, Math.floor(width));
+  viewH = Math.min(cell * rows, Math.floor(height));
+  scrolling = viewW < cell * cols || viewH < cell * rows;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);   // 큰 미로에서 메모리 절약
+  canvas.style.width = viewW + 'px';
+  canvas.style.height = viewH + 'px';
+  canvas.width = Math.round(viewW * dpr);
+  canvas.height = Math.round(viewH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   wallLayer = buildWalls(dpr);
+  updateCamera(1e9);
 }
+
+function updateCamera(dt) {
+  if (!scrolling) { camX = camY = 0; return; }
+  const [px, py] = heroPos();
+  const tx = Math.max(0, Math.min(cell * cols - viewW, (px + 0.5) * cell - viewW / 2));
+  const ty = Math.max(0, Math.min(cell * rows - viewH, (py + 0.5) * cell - viewH / 2));
+  const k = Math.min(1, dt / 120);
+  camX += (tx - camX) * k;
+  camY += (ty - camY) * k;
+}
+
+// 진동 (지원하는 휴대폰만)
+function buzz(pattern) { try { navigator.vibrate && navigator.vibrate(pattern); } catch {} }
 
 // ===== 덩쿨 벽 (미로마다 한 번만 그려서 캐시) =====
 function rand(seed) { // 좌표 기반 고정 난수
@@ -433,6 +474,7 @@ function win() {
 
   winTime = performance.now();
   anim.facing = 1;
+  buzz([60, 40, 60, 40, 150]);
   const msgs = elapsed < 10 ? ['번개처럼 달려와 줬군요! ⚡', '이렇게 빨리 와 주다니!']
              : elapsed < 30 ? ['멋진 모험이었어요! 👏', '덩쿨 미로를 뚫고 와 줬어요!']
              : ['포기하지 않고 와 줬군요! 💪', '드디어 다시 만났어요!'];
@@ -449,6 +491,7 @@ function win() {
 
 function lose() {
   over = true; running = false;
+  buzz(250);
   const msgs = ['막다른 길이었어요… 😵', '슬라임에게 붙잡혔어요!', '길을 잘못 들었어요…'];
   showResult({
     fail: true,
@@ -617,6 +660,7 @@ function resolveHits() {
       inv.feather--;
       en.stun = 3; en.stunType = 'daze';
       anim.jump = performance.now();
+      buzz([20, 40, 20]);
       toast('🪶 깡총! 슬라임을 뛰어넘었어요 (3턴 기절)');
     } else {
       lose();
@@ -685,9 +729,11 @@ function checkPickup() {
     if (p.taken || p.x !== player.x || p.y !== player.y) continue;
     p.taken = true;
     inv[p.type]++;
+    buzz(30);
     toast(p.type === 'feather'
       ? '🪶 점프 깃털 획득! 슬라임에 닿으면 자동으로 뛰어넘어요'
-      : '❄️ 얼음 결정 획득! Space 또는 ❄️ 버튼으로 발밑에 설치해요');
+      : isTouch() ? '❄️ 얼음 결정 획득! 오른쪽 아래 ❄️ 버튼으로 발밑에 설치해요'
+                  : '❄️ 얼음 결정 획득! Space 또는 ❄️ 버튼으로 발밑에 설치해요');
   }
 }
 
@@ -708,6 +754,7 @@ function checkTrap(en) {
   if (i < 0) return;
   traps.splice(i, 1);
   en.stun = ICE_TURNS; en.stunType = 'ice';
+  buzz(40);
   toast(`❄️ 슬라임이 얼음을 밟았어요! ${ICE_TURNS}턴 정지`);
 }
 
@@ -715,6 +762,8 @@ function updateItems() {
   $('featherCount').textContent = inv.feather;
   $('iceCount').textContent = inv.ice;
   $('iceBtn').disabled = inv.ice <= 0 || won || over;
+  $('iceFab').hidden = inv.ice <= 0 || won || over;
+  $('iceFabCount').textContent = inv.ice;
   const left = pickups.filter(p => !p.taken).length;
   $('nextItem').textContent = left && !won && !over ? `🎁 맵에 ${left}개` : '';
 }
@@ -744,6 +793,7 @@ function loop(ts) {
   if (running) { elapsed = Math.max(0, (ts - startTime) / 1000); $('time').textContent = elapsed.toFixed(1) + 's'; }
   anim.t = Math.min(1, anim.t + dt / 90);
   for (const en of enemies) en.t = Math.min(1, en.t + dt / 90);
+  if (grid) updateCamera(dt);
   if (grid && wallLayer) draw(ts);
   if (won && $('overlay').classList.contains('show')) drawLoveScene(ts);
   requestAnimationFrame(loop);
@@ -808,7 +858,9 @@ function drawLoveScene(ts) {
 
 function draw(ts) {
   const W = cols * cell, H = rows * cell;
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, viewW, viewH);
+  ctx.save();
+  ctx.translate(-Math.round(camX), -Math.round(camY));
 
   // 지나온 길
   ctx.fillStyle = 'rgba(255,230,150,0.10)';
@@ -951,6 +1003,37 @@ function draw(ts) {
   }
 
   ctx.imageSmoothingEnabled = true;
+  ctx.restore();
+  if (scrolling) drawMinimap();
+}
+
+// 큰 미로를 스크롤할 때 오른쪽 위 미니맵: 전체 모양 + 나(노랑) / 공주(분홍) / 슬라임(빨강) / 아이템
+function drawMinimap() {
+  const W = cols * cell, H = rows * cell;
+  const s = Math.min(Math.min(96, viewW * 0.26) / W, (viewH * 0.35) / H);
+  const mw = W * s, mh = H * s;
+  // 주인공이 미니맵 밑에 있으면 반대쪽 위로 옮김
+  const hxs = (player.x + 0.5) * cell - camX, hys = (player.y + 0.5) * cell - camY;
+  const underRight = hxs > viewW - mw - 6 - cell && hys < mh + 6 + cell;
+  const mx = underRight ? 6 : viewW - mw - 6, my = 6;
+  ctx.fillStyle = 'rgba(10,20,12,0.8)';
+  ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
+  ctx.globalAlpha = 0.8;
+  ctx.drawImage(wallLayer, mx, my, mw, mh);
+  ctx.globalAlpha = 1;
+  // 지금 보이는 영역
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mx + camX * s, my + camY * s, viewW * s, viewH * s);
+  const dot = (x, y, color, r) => {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(mx + (x + 0.5) * cell * s, my + (y + 0.5) * cell * s, r, 0, Math.PI * 2); ctx.fill();
+  };
+  for (const p of pickups) if (!p.taken) dot(p.x, p.y, p.type === 'ice' ? '#7fd3ff' : '#fff0aa', 1.8);
+  for (const t of traps) dot(t.x, t.y, '#bfefff', 1.5);
+  dot(goal.x, goal.y, '#ff8cc6', 3);
+  for (const en of enemies) dot(en.x, en.y, en.stun > 0 ? '#9a7fd0' : '#ff3355', 2.5);
+  dot(player.x, player.y, '#ffd23f', 3);
 }
 
 // ===== 키보드 =====
@@ -996,8 +1079,8 @@ canvas.addEventListener('touchend', e => {
   const t = e.changedTouches[0];
   if (!touch.moved && Math.hypot(t.clientX - touch.startX, t.clientY - touch.startY) < 10) {
     const r = canvas.getBoundingClientRect();
-    const dx = t.clientX - r.left - (player.x + 0.5) * cell;
-    const dy = t.clientY - r.top - (player.y + 0.5) * cell;
+    const dx = t.clientX - r.left + camX - (player.x + 0.5) * cell;
+    const dy = t.clientY - r.top + camY - (player.y + 0.5) * cell;
     if (Math.max(Math.abs(dx), Math.abs(dy)) > cell * 0.4) {
       move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
     }
@@ -1011,9 +1094,19 @@ document.querySelectorAll('.diffs button').forEach(b => b.addEventListener('clic
 }));
 
 $('iceBtn').addEventListener('click', e => { useIce(); e.currentTarget.blur(); });
+$('iceFab').addEventListener('click', e => { useIce(); e.currentTarget.blur(); });
+canvas.addEventListener('contextmenu', e => e.preventDefault());   // 길게 누를 때 메뉴 방지
 
+// 화면 회전 등 크기 변경: 아직 출발 전이면 새 화면 모양에 맞는 미로로 다시 만들고, 진행 중이면 크기만 맞춤
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 100); });
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const { width, height } = availSize();
+    const mismatch = cols !== rows && (cols > rows) !== (width > height);
+    if (mismatch && moves === 0 && !won && !over) newMaze(); else resize();
+  }, 150);
+});
 
 newMaze();
 requestAnimationFrame(loop);
